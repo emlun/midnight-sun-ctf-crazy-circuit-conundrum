@@ -1,40 +1,113 @@
 #!/usr/bin/python3
 
 import random
+import z3
+from z3 import (
+    And,
+    Bool,
+    Not,
+    Or,
+    Solver,
+)
 
 
-def count_operator(components, operator):
-    return sum([(1 if c[1] == operator else 0) for c in components])
+def Nor(a, b):
+    return Not(Or(a, b))
 
 
-def format_component(component):
-    (lhs, op, rhs, not_lhs, not_rhs) = component
-    return '%s %s %s' % (
-        'not(%s)' % lhs if component[3] else lhs,
-        op,
-        'not(%s)' % rhs if component[4] else rhs,
+def test_problem(problem):
+    s = Solver()
+    s.add(problem)
+    return s.check() == z3.sat
+
+
+def print_solution(problem):
+    print(problem)
+    print(z3.simplify(problem))
+
+    s = Solver()
+    s.add(problem)
+    if s.check() == z3.sat:
+        m = s.model()
+        print(m)
+    else:
+        print('unsat')
+
+
+def maybe_wrap_not(a, should_wrap):
+    return Not(a) if should_wrap else a
+
+
+def enlarge_problem(pin_queue, operator_queue, conditions):
+    if len(pin_queue) == 0 or len(operator_queue) == 0:
+        return conditions
+
+    else:
+        [lhs, rhs] = pin_queue[:2]
+        operator = operator_queue[0]
+
+        remaining_pins = pin_queue[2:]
+        remaining_operators = operator_queue[1:]
+
+        new_condition_candidates = [
+            operator(
+                maybe_wrap_not(lhs, not_lhs),
+                maybe_wrap_not(rhs, not_rhs),
+            )
+            for (not_lhs, not_rhs) in zip(
+                random.sample([True, False], k=2),
+                random.sample([True, False], k=2),
+            )
+        ]
+
+        valid_candidates = [
+            candidate
+            for candidate in new_condition_candidates if test_problem(And(*conditions, candidate))
+        ]
+
+        for cand in valid_candidates:
+            solution = enlarge_problem(remaining_pins, remaining_operators, [*conditions, cand])
+            if solution is not None:
+                return solution
+
+
+def build_problem():
+    num_inputs = 16
+
+    component_operators = [And, Nor]
+
+    pins = [Bool('dip_%d' % i) for i in range(num_inputs)]
+
+    operator_queue = random.sample(component_operators * (num_inputs // len(component_operators)), k=num_inputs)
+    pin_queue = random.sample(pins * 2, k=num_inputs*2)
+
+    return (pins, And(*enlarge_problem(pin_queue, operator_queue, [])))
+
+
+def check_unique_solution(pins, problem):
+    s = Solver()
+    s.add(problem)
+
+    print(problem)
+
+    if s.check() == z3.sat:
+        print(s.model())
+
+        s.add(Not(model_to_condition(pins, s.model())))
+        if s.check() == z3.sat:
+            print(s.model())
+            print('Solution not unique!')
+        else:
+            print('Solution is unique!')
+    else:
+        print('Not solvable!')
+
+
+def model_to_condition(pins, model):
+    return And(
+        *[pin if bool(model[pin]) else Not(pin) for pin in pins]
     )
 
 
-num_inputs = 16
-
-# component_operators = ['and', 'or', 'xor', 'nor', 'nand']
-component_operators = ['and', 'nor']
-overall_operator = 'and'
-
-inputs = ['i' + str(i) for i in range(1, num_inputs + 1)]
-
-operators_to_choose_from = random.sample(component_operators, num_inputs // 4) if len(component_operators) > 4 else component_operators
-operators_to_choose_from = operators_to_choose_from * (num_inputs // len(component_operators))
-operators_to_choose_from.sort()
-
-components = [(lhs, op, rhs, not_lhs, not_rhs) for (lhs, op, rhs, not_lhs, not_rhs) in zip(random.sample(inputs, num_inputs), operators_to_choose_from, random.sample(inputs, num_inputs), random.choices([True, False], k=num_inputs), random.choices([True, False], k=num_inputs))]
-
-
-print('and( (' + '), ('.join([format_component(c) for c in components]) + ') )')
-
-for op in component_operators:
-    print('%s: %d' % (op, count_operator(components, op)))
-
-print('not: %d' % sum([(1 if c[3] else 0) + (1 if c[4] else 0) for c in components]))
-print('self: %d' % sum([1 if c[0] == c[2] else 0 for c in components]))
+(pins, problem) = build_problem()
+check_unique_solution(pins, problem)
