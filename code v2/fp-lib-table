@@ -1,0 +1,4 @@
+(fp_lib_table
+  (lib (name emlun)(type KiCad)(uri /home/emlun/documents/elektronik/emlun-cpu/emlun.pretty)(options "")(descr ""))
+  (lib (name electrokit)(type KiCad)(uri /home/emlun/documents/elektronik/emlun-cpu/electrokit.pretty)(options "")(descr ""))
+)
